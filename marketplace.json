@@ -1,0 +1,14 @@
+{
+  "version": "1",
+  "name": "sinozu-skills",
+  "description": "Development workflow skills by sinozu",
+  "plugins": [
+    {
+      "name": "ai-review-gap-analysis",
+      "source": "./plugins/ai-review-gap-analysis",
+      "description": "Analyze gaps between AI code review approvals and human reviewer feedback",
+      "author": "Shin Uozumi",
+      "homepage": "https://github.com/sinozu/claude-skills"
+    }
+  ]
+}
