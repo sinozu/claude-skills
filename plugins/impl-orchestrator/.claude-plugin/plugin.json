@@ -1,0 +1,20 @@
+{
+  "name": "impl-orchestrator",
+  "version": "1.0.0",
+  "description": "Autonomous implementation orchestrator that reads an implementation plan and executes PR-by-PR using Implementer/Reviewer/Debugger sub-agents with a finite state machine.",
+  "author": {
+    "name": "Shin Uozumi",
+    "url": "https://github.com/sinozu"
+  },
+  "homepage": "https://github.com/sinozu/claude-skills",
+  "repository": "https://github.com/sinozu/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "implementation",
+    "orchestrator",
+    "sub-agent",
+    "code-review",
+    "state-machine",
+    "autonomous"
+  ]
+}

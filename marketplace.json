@@ -9,6 +9,13 @@
       "description": "Analyze gaps between AI code review approvals and human reviewer feedback",
       "author": "Shin Uozumi",
       "homepage": "https://github.com/sinozu/claude-skills"
+    },
+    {
+      "name": "impl-orchestrator",
+      "source": "./plugins/impl-orchestrator",
+      "description": "Autonomous implementation orchestrator with Implementer/Reviewer/Debugger sub-agents",
+      "author": "Shin Uozumi",
+      "homepage": "https://github.com/sinozu/claude-skills"
     }
   ]
 }
