@@ -56,9 +56,14 @@ arguments:
    - 対象ディレクトリの `CLAUDE.md`（存在すれば）
    - プロジェクトのビルド/テスト設定（Makefile, package.json, Cargo.toml 等）
 5. **検証コマンドを決定**: ビルド設定から正確なコマンドを特定
-   - TEST: テストコマンド
-   - LINT: リンターコマンド
-   - FMT: フォーマッターコマンド（あれば）
+   - TEST: 単体テストコマンド（例: `go test ./...` / `npm test` / `pytest`）
+   - E2E_TEST: E2E テストコマンドパターン（あれば）
+     - **スコープ指定の placeholder を含む**形式で渡すこと
+     - 例: `go test -run {TEST_NAME} ./e2etests/...` / `jest -t '{TEST_NAME}'` / `pytest -k '{TEST_NAME}'`
+     - エージェントは変更箇所から TEST_NAME を特定して置換する
+     - E2E テスト基盤がない or 該当しないプロジェクトでは N/A
+   - LINT: リンターコマンド（例: `make lint` / `npm run lint` / `cargo clippy`）
+   - FMT: フォーマッターコマンド（例: `make fmt` / `npm run format` / `cargo fmt`）
 6. **進捗ファイルを確認/作成**: `/tmp/impl-orchestrator/.progress-{計画書ファイル名}.md`
    - `/tmp/impl-orchestrator/` ディレクトリが存在しなければ `mkdir -p` で作成
    - 既存なら Read して再開ポイントを特定
@@ -122,7 +127,8 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
    - PR番号とタイトル
    - 実装計画書の該当PRセクション全文
    - プロジェクトコンテキスト（CLAUDE.md 等）
-   - 検証コマンド (TEST, LINT, FMT)
+   - 検証コマンド (TEST, E2E_TEST, LINT, FMT)
+   - E2E_TEST パターンの説明（スコープ指定必須、例: `go test -run {TEST_NAME}`）
    - Implementation Notes（進捗ファイルから）
    - reviewer_feedback があれば「Reviewer フィードバック」として追加
    - debugger_fix_plan があれば「Debug レポート」として追加
@@ -132,7 +138,9 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
 
    READY_FOR_REVIEW の場合:
    >> Implementer 完了: READY_FOR_REVIEW
-      変更: {CHANGED_FILES の件数}ファイル / テスト: {TEST_RESULT} / リント: {LINT_RESULT}
+      変更: {CHANGED_FILES の件数}ファイル
+      テスト: {TEST_RESULT} / E2E: {E2E_RESULT} / リント: {LINT_RESULT} / fmt: {FMT_RESULT}
+      E2E スコープ: {E2E_SCOPE}
    → ③ へ
 
    BLOCKED の場合:
@@ -158,7 +166,9 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
    - PR番号とタイトル
    - 実装計画書の該当PRセクション全文
    - git diff の出力
-   - 検証コマンド (TEST, LINT)
+   - 検証コマンド (TEST, E2E_TEST, LINT, FMT)
+   - E2E_TEST パターンの説明（スコープ指定必須）
+   - Implementer が報告した E2E_SCOPE（妥当性検証のため）
    - CHANGED_FILES のリスト
    - プロジェクト固有のアーキテクチャルール（あれば）
    ─────────────────────────────────────
@@ -167,13 +177,14 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
 
    APPROVED の場合:
    >> Reviewer 完了: APPROVED
-      機械チェック: テスト {Tests} / リント {Lint} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      機械チェック: テスト {Tests} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      E2E スコープ: {E2E_SCOPE}
       総評: {SUMMARY}
    → ④ へ
 
    REJECTED (reviewer_rejections < 2) の場合:
    >> Reviewer 完了: REJECTED ({reviewer_rejections+1}/2)
-      機械チェック: テスト {Tests} / リント {Lint} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      機械チェック: テスト {Tests} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
       指摘 ({FINDINGS の件数}件): {FINDINGS の 1件目}
       >> Implementer に差し戻し (REMEDIATION 付き)
    reviewer_rejections += 1, reviewer_feedback = REMEDIATION → ② へ
