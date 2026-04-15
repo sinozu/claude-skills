@@ -87,13 +87,36 @@ arguments:
 - `reviewer_feedback`: null（最新の REMEDIATION）
 - `debugger_fix_plan`: null（最新の FIX_PLAN）
 
+### 進捗バナー出力ルール
+
+状態遷移のたびに **進捗ヘッダー + 遷移バナー** をユーザーに出力する。
+auto / step 両モードで同一の内容を出力する（auto では一時停止しないだけ）。
+
+**進捗ヘッダー**（各遷移で 1 行目に出力）:
+```
+───── PR {N}/{total} [{タイトル30文字まで}] ── {ステップ名} ── {R回数}/2R {D回数}/2D ─────
+```
+- ステップ名: ① ブランチ作成 / ② Implementer / ③ Reviewer / ④ 完了処理 / ⑤ Debugger / ⑥ 上限チェック
+- R = reviewer_rejections, D = debug_rounds
+
+**遷移バナー**（ヘッダーの次行に `>>` で出力）: 各状態で何が起きたか/起きるかを 1〜3 行で表示する。詳細は以下の状態機械内に記載。
+
 ```
 ① ブランチ作成
    前の PR ブランチが存在する（依存関係あり）→ そこから分岐
    それ以外 → main から分岐
    ブランチ名: {ticket}-pr{N}-{short-desc}（kebab-case）
 
+   【バナー出力】ブランチ作成後:
+   [進捗ヘッダー ── ① ブランチ作成]
+   >> ブランチ作成: {branch-name} (from {base-branch})
+
 ② Implementer spawn
+   【バナー出力】spawn 前:
+   [進捗ヘッダー ── ② Implementer]
+   >> Implementer 起動中...
+      コンテキスト: チェック項目 {N}個 / feedback: {あり|なし} / fix_plan: {あり|なし}
+
    Agent tool で impl-worker を spawn。prompt に以下を含める:
    ─────────────────────────────────────
    - PR番号とタイトル
@@ -105,13 +128,31 @@ arguments:
    - debugger_fix_plan があれば「Debug レポート」として追加
    ─────────────────────────────────────
 
-   戻り値の STATUS をパース:
-   ├─ READY_FOR_REVIEW → ③ へ
-   ├─ BLOCKED          → ⑤ へ
-   └─ NEEDS_CONTEXT    → 1 回だけ NEEDS の内容を調べて再 spawn。再度 NEEDS_CONTEXT なら ⑤ へ
+   戻り値の STATUS をパースし、【バナー出力】:
+
+   READY_FOR_REVIEW の場合:
+   >> Implementer 完了: READY_FOR_REVIEW
+      変更: {CHANGED_FILES の件数}ファイル / テスト: {TEST_RESULT} / リント: {LINT_RESULT}
+   → ③ へ
+
+   BLOCKED の場合:
+   >> Implementer 完了: BLOCKED
+      理由: {BLOCKED_REASON}
+   → ⑤ へ
+
+   NEEDS_CONTEXT の場合:
+   >> Implementer 完了: NEEDS_CONTEXT
+      必要情報: {NEEDS}
+      >> コンテキスト調査後に再spawn...
+   → 1 回だけ NEEDS の内容を調べて再 spawn。再度 NEEDS_CONTEXT なら ⑤ へ
 
 ③ Reviewer spawn
    git diff を取得: `git diff {base-branch}...HEAD`
+
+   【バナー出力】spawn 前:
+   [進捗ヘッダー ── ③ Reviewer]
+   >> Reviewer 起動中... (diff: {git diff --stat のファイル数と行数概要})
+
    Agent tool で impl-reviewer を spawn。prompt に以下を含める:
    ─────────────────────────────────────
    - PR番号とタイトル
@@ -122,14 +163,25 @@ arguments:
    - プロジェクト固有のアーキテクチャルール（あれば）
    ─────────────────────────────────────
 
-   戻り値の VERDICT をパース:
-   ├─ APPROVED                    → ④ へ
-   ├─ REJECTED (reviewer_rejections < 2)
-   │    reviewer_rejections += 1
-   │    reviewer_feedback = REMEDIATION
-   │    → ② へ（再 Implementer）
-   └─ REJECTED (reviewer_rejections >= 2)
-        → ⑤ へ（Debugger）
+   戻り値の VERDICT をパースし、【バナー出力】:
+
+   APPROVED の場合:
+   >> Reviewer 完了: APPROVED
+      機械チェック: テスト {Tests} / リント {Lint} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      総評: {SUMMARY}
+   → ④ へ
+
+   REJECTED (reviewer_rejections < 2) の場合:
+   >> Reviewer 完了: REJECTED ({reviewer_rejections+1}/2)
+      機械チェック: テスト {Tests} / リント {Lint} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      指摘 ({FINDINGS の件数}件): {FINDINGS の 1件目}
+      >> Implementer に差し戻し (REMEDIATION 付き)
+   reviewer_rejections += 1, reviewer_feedback = REMEDIATION → ② へ
+
+   REJECTED (reviewer_rejections >= 2) の場合:
+   >> Reviewer 完了: REJECTED (上限到達 {reviewer_rejections+1}/2)
+      >> Debugger にエスカレーション
+   → ⑤ へ
 
 ④ 完了処理
    4a. step モードの場合、ユーザーに提示:
@@ -144,6 +196,9 @@ arguments:
        - git commit: feat({scope}): PR{N} {description}
        - フォーマット: Co-Authored-By を含める
 
+   【バナー出力】コミット後:
+   >> PR {N} コミット完了: {commit hash 先頭8文字} on {branch-name}
+
    4c. 進捗更新:
        - 進捗ファイルの該当 PR を ✅ に更新
        - Implementer の NOTES が「なし」でなければ Implementation Notes に追記
@@ -151,6 +206,11 @@ arguments:
    4d. 次の PR へ（Step 1 に戻る）
 
 ⑤ Debugger spawn
+   【バナー出力】spawn 前:
+   [進捗ヘッダー ── ⑤ Debugger]
+   >> Debugger 起動中...
+      投入理由: {BLOCKED or REJECTED} / Implementer {試行回数}回試行済み
+
    Agent tool で impl-debugger を spawn。prompt に以下を含める:
    ─────────────────────────────────────
    - PR番号とタイトル
@@ -160,22 +220,46 @@ arguments:
    - reviewer_feedback（あれば）
    ─────────────────────────────────────
 
-   戻り値の NEXT_ACTION をパース:
-   ├─ RETRY_TASK (debug_rounds < 2)
-   │    debug_rounds += 1
-   │    debugger_fix_plan = FIX_PLAN
-   │    reviewer_feedback = null（リセット）
-   │    → ② へ（Implementer に FIX_PLAN 込みで再 spawn）
-   ├─ RETRY_TASK (debug_rounds >= 2)
-   │    → 上限超過: 🚫 ブロック記録、次 PR へ
-   ├─ BLOCK_TASK
-   │    → 🚫 ブロック記録（ROOT_CAUSE を備考に）、次 PR へ
-   └─ STOP_FOR_HUMAN
-        → 🚫 ブロック記録、ユーザーに詳細報告して停止
+   戻り値の NEXT_ACTION をパースし、【バナー出力】:
+
+   RETRY_TASK (debug_rounds < 2) の場合:
+   >> Debugger 完了: RETRY_TASK (debug {debug_rounds+1}/2)
+      根本原因: {ROOT_CAUSE}
+      カテゴリ: {CATEGORY} / 確信度: {CONFIDENCE}
+      修正計画: {FIX_PLAN の 1行目}
+      >> Implementer に FIX_PLAN 付きで再spawn...
+   debug_rounds += 1, debugger_fix_plan = FIX_PLAN, reviewer_feedback = null → ② へ
+
+   RETRY_TASK (debug_rounds >= 2) の場合:
+   >> Debugger 完了: RETRY_TASK だが上限超過 (debug {debug_rounds+1}/2)
+      根本原因: {ROOT_CAUSE}
+      >> PR {N} を強制ブロック、次の PR へ
+   → 🚫 ブロック記録、次 PR へ
+
+   BLOCK_TASK の場合:
+   >> Debugger 完了: BLOCK_TASK
+      根本原因: {ROOT_CAUSE}
+      カテゴリ: {CATEGORY}
+      >> PR {N} をブロック記録、次の PR へ
+   → 🚫 ブロック記録（ROOT_CAUSE を備考に）、次 PR へ
+
+   STOP_FOR_HUMAN の場合:
+   >> Debugger 完了: STOP_FOR_HUMAN
+      根本原因: {ROOT_CAUSE}
+      カテゴリ: {CATEGORY} / 確信度: {CONFIDENCE}
+      修正計画: {FIX_PLAN 全文}
+      NOTES: {NOTES}
+      >> 人間の判断が必要です。実行を停止します。
+   → 🚫 ブロック記録、ユーザーに詳細報告して停止
 
 ⑥ 上限チェック（② ③ ⑤ の各遷移前に確認）
    reviewer_rejections > 2 or debug_rounds > 2
-   → 強制ブロック: 進捗ファイルに 🚫 記録、次 PR へ
+
+   【バナー出力】:
+   [進捗ヘッダー ── ⑥ 上限チェック]
+   >> 上限超過: reviewer_rejections={N}, debug_rounds={N}
+      >> PR {N} を強制ブロック、次の PR へ
+   → 進捗ファイルに 🚫 記録、次 PR へ
 ```
 
 ### Step 3: 完了レポート
