@@ -1,20 +1,30 @@
 {
-  "version": "1",
   "name": "sinozu-skills",
-  "description": "Development workflow skills by sinozu",
+  "owner": {
+    "name": "Shin Uozumi"
+  },
+  "metadata": {
+    "description": "Development workflow skills by sinozu"
+  },
   "plugins": [
     {
       "name": "ai-review-gap-analysis",
       "source": "./plugins/ai-review-gap-analysis",
       "description": "Analyze gaps between AI code review approvals and human reviewer feedback",
-      "author": "Shin Uozumi",
+      "version": "1.0.0",
+      "author": {
+        "name": "Shin Uozumi"
+      },
       "homepage": "https://github.com/sinozu/claude-skills"
     },
     {
       "name": "impl-orchestrator",
       "source": "./plugins/impl-orchestrator",
       "description": "Autonomous implementation orchestrator with Implementer/Reviewer/Debugger sub-agents",
-      "author": "Shin Uozumi",
+      "version": "1.0.0",
+      "author": {
+        "name": "Shin Uozumi"
+      },
       "homepage": "https://github.com/sinozu/claude-skills"
     }
   ]
