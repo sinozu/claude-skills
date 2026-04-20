@@ -14,9 +14,17 @@ Claude Code 用のスキルプラグイン集。
 ### Via Marketplace
 
 ```bash
-claude plugin configure-marketplace https://raw.githubusercontent.com/sinozu/claude-skills/main/marketplace.json
+claude plugin marketplace add sinozu/claude-skills
 claude plugin install ai-review-gap-analysis@sinozu-skills
 claude plugin install impl-orchestrator@sinozu-skills
+```
+
+Or inside an interactive session:
+
+```
+/plugin marketplace add sinozu/claude-skills
+/plugin install ai-review-gap-analysis@sinozu-skills
+/plugin install impl-orchestrator@sinozu-skills
 ```
 
 ### Manual

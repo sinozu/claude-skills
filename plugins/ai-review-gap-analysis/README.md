@@ -28,7 +28,7 @@ GitHub リポジトリの PR レビューデータを分析し、以下を特定
 ## Install
 
 ```bash
-claude plugin configure-marketplace https://raw.githubusercontent.com/sinozu/claude-skills/main/marketplace.json
+claude plugin marketplace add sinozu/claude-skills
 claude plugin install ai-review-gap-analysis@sinozu-skills
 ```
 
