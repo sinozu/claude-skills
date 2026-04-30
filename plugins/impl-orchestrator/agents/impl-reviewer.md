@@ -30,10 +30,11 @@ Implementer の意図や弁明は知らない。diff と仕様だけで判断す
    - Implementer が `TEST_RESULT: SKIPPED_ENV_ISSUE` を報告し、prompt の `ENV_STATUS: ISSUE` の `ENV_DETAILS` と一致する症状であれば、REJECTED 基準から除外（環境起因として扱う）
 2. **E2E テスト実行（スコープ指定）**:
    - 渡された E2E_TEST コマンドパターンがある場合のみ実行
+   - **渡された E2E_TEST コマンドのフラグ（特に `-e2emode=coverage` 等のモードフラグ）はすべて維持する**。Implementer 側でフラグが落とされていないかも合わせて検証する
    - **修正した gRPC/API エンドポイントに対応するテストのみ**を実行する
    - Implementer が報告した E2E_SCOPE のテスト名を独立に再確認し、不足があれば追加実行する
    - 実行例:
-     - Go: `go test -run TestXxx ./e2etests/...`
+     - Go: `go test -run TestXxx ./e2etests/...`（プロジェクト固有のフラグがあれば追加。例 kauche-app: `go test -run TestXxx -e2emode=coverage ./e2etests/...`）
      - Jest: `jest -t 'Xxx'`
      - Pytest: `pytest -k 'Xxx'`
    - Implementer が E2E_RESULT を偽装していないか独立実行で検証すること
