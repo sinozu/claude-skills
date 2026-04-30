@@ -69,6 +69,49 @@ arguments:
    - 既存なら Read して再開ポイントを特定
    - なければ新規作成（後述のフォーマット）
 
+### Step 0.5: 環境 pre-check
+
+Implementer/Reviewer が環境問題の切り分けに時間を消費するのを防ぐため、orchestrator が事前に環境状態を確認する。
+プロジェクトに該当しない項目は skip して構わない（proto-only PR や、ビルド/テスト環境を必要としない PR では本ステップ全体を skip）。
+
+**キャッシュ機構**:
+- `/tmp/impl-orchestrator/.env-cache-{計画書ファイル名}.txt` を確認
+- 存在し、最終更新から **30 分以内** ならキャッシュを採用して本ステップ実行を skip
+- それ以外は以下を実行し、結果をキャッシュに書き出す（`ENV_STATUS=...\nENV_DETAILS=...\nENV_BASELINE_VERIFIED=...\nTIMESTAMP=...` 形式）
+
+**チェック項目**（プロジェクトに該当するものだけ実行）:
+
+1. **Docker compose 状態**（`compose.yaml` または `docker-compose.yml` がある場合のみ）:
+   - `docker compose ps` を実行し、起動サービスを取得
+2. **Spanner Emulator 起動状態**（プロジェクトが Spanner を使う場合のみ）:
+   - `nc -z localhost 9020 && echo OK || echo NG`
+3. **wrench 動作状態**（wrench をテストで使う場合のみ）:
+   - `wrench instance list` を実行（軽量。失敗 → wrench 不可と記録）
+4. **その他**: プロジェクト固有の重要サービス（PostgreSQL、Redis 等）
+
+**結果の構造化**:
+- 全項目正常 → `ENV_STATUS: OK`
+- 1 つでも失敗 → `ENV_STATUS: ISSUE` + `ENV_DETAILS: {症状の具体記述。例: "Spanner Emulator 9020 unreachable; wrench instance list timeout"}`
+- 全項目 skip → `ENV_STATUS: NOT_APPLICABLE`
+
+**baseline 再現判定**（`ENV_BASELINE_VERIFIED` の決定）:
+- `ENV_STATUS: OK` または `NOT_APPLICABLE` → `ENV_BASELINE_VERIFIED: true`（環境問題なし、もしくは判定不要）
+- `ENV_STATUS: ISSUE` のとき、`ENV_DETAILS` の症状が **実装に依存しない種類**（emulator/サービスの起動失敗、外部依存のタイムアウト等）であれば `ENV_BASELINE_VERIFIED: true`
+- 症状が実装の影響を受けうる種類（個別テストの失敗、ビルドエラー等）なら `ENV_BASELINE_VERIFIED: false`
+  - この場合 Reviewer は従来どおり `git stash` 経由で baseline 検証を行う
+
+**結果の伝搬先**:
+- Step 2 ② Implementer prompt（後述。`ENV_STATUS` / `ENV_DETAILS`）
+- Step 2 ③ Reviewer prompt（後述。`ENV_STATUS` / `ENV_DETAILS` / `ENV_BASELINE_VERIFIED`）
+- 進捗ファイルの「Implementation Notes」末尾に `- env pre-check ({YYYY-MM-DD HH:MM}): {ENV_STATUS} / {ENV_DETAILS}` を 1 行追記
+
+**バナー出力**:
+```
+[進捗ヘッダー ── 0.5 環境 pre-check]
+>> 環境 pre-check: {ENV_STATUS} (baseline_verified: {true|false})
+   {ENV_DETAILS or "全項目 OK" or "対象外 (skip)" or "キャッシュ採用 (age {分}m)"}
+```
+
 ### Step 1: タスク選択
 
 1. 実装計画書から **PR 一覧**をパース（`### PR N:` または `PR N:` の見出し/リスト項目を検出）
@@ -101,7 +144,8 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
 ```
 ───── PR {N}/{total} [{タイトル30文字まで}] ── {ステップ名} ── {R回数}/2R {D回数}/2D ─────
 ```
-- ステップ名: ① ブランチ作成 / ② Implementer / ③ Reviewer / ④ 完了処理 / ⑤ Debugger / ⑥ 上限チェック
+- ステップ名: 0.5 環境 pre-check / ① ブランチ作成 / ② Implementer / ③ Reviewer / ④ 完了処理 / ⑤ Debugger / ⑥ 上限チェック
+- Step 0.5 は PR 共通の前処理のため、ヘッダーは PR 番号を省いた `───── 0.5 環境 pre-check ─────` の短縮形にしてよい
 - R = reviewer_rejections, D = debug_rounds
 
 **遷移バナー**（ヘッダーの次行に `>>` で出力）: 各状態で何が起きたか/起きるかを 1〜3 行で表示する。詳細は以下の状態機械内に記載。
@@ -112,15 +156,48 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
    それ以外 → main から分岐
    ブランチ名: {ticket}-pr{N}-{short-desc}（kebab-case）
 
-   【バナー出力】ブランチ作成後:
+   【後処理】vendor 整合チェック (Go プロジェクトのみ):
+     `go.mod` が存在する場合に `go mod vendor` を実行。
+     差分が出ても **コミット対象外** として扱う（vendor は通常 commit しない運用が多いため）。
+     差分が出た場合は進捗ファイル Implementation Notes に
+       `- vendor 自動更新 ({件数} ファイル) at PR{N}`
+     を 1 行追記。これにより Implementer/Reviewer が `vendor/modules.txt` 不整合に時間を取られない。
+   【スキップ条件】proto-only PR、Go 以外のプロジェクト、`go.mod` がないリポジトリ
+
+   【バナー出力】ブランチ作成 + vendor 整合チェック後:
    [進捗ヘッダー ── ① ブランチ作成]
    >> ブランチ作成: {branch-name} (from {base-branch})
+   >> vendor 整合: {OK | 自動更新 N ファイル | skip}
 
 ② Implementer spawn
+
+   【前処理 1】caller pre-grep:
+     計画書の該当 PR セクションから「変更対象 symbol」（関数名/型名/RPC 名/メソッド名）を抽出する。
+     抽出パターンの例:
+       - 「`HandleSubscriptionWebhook` のシグネチャ拡張」→ symbol: `HandleSubscriptionWebhook`
+       - 「`UserUseCase.UpdateXxx` を変更」→ symbol: `UpdateXxx`
+     抽出できた symbol について `git grep -ln "<symbol>" -- <scope>` を実行:
+       - Go: `*.go`
+       - TS/JS: `*.ts` `*.tsx` `*.js` `*.jsx`
+       - Python: `*.py`
+     0 件 → `CALLERS: なし`
+     1 件 → `CALLERS: 単一（自身の定義のみと推定）`
+     2 件以上 → caller リストを `CALLERS:` としてプロンプトに注入
+     【スキップ条件】計画書から symbol が抽出できない / 新規追加のみで既存 symbol 変更なし → `CALLERS: skip`
+
+   【前処理 2】test scope hint:
+     計画書の「変更対象ファイル」または CHANGED_FILES（再試行時）から所属パッケージを推定し
+     `TEST_SCOPE_HINT` を構築する。
+     例 (Go): `internal/usecase/customer/*.go` → `./internal/usecase/customer/...`
+     例 (TS): `src/handlers/webhook/*.ts` → `src/handlers/webhook`
+     【スキップ条件】変更対象ファイルが推定できない場合 → `TEST_SCOPE_HINT: skip`
+
    【バナー出力】spawn 前:
    [進捗ヘッダー ── ② Implementer]
-   >> Implementer 起動中...
-      コンテキスト: チェック項目 {N}個 / feedback: {あり|なし} / fix_plan: {あり|なし}
+   >> Implementer 起動中... (チェック項目 {N}個 / CALLERS {件数 or skip} / TEST_SCOPE {hint or skip})
+   # feedback / fix_plan のいずれかがある場合のみ追加行を出す:
+   #    feedback: {REMEDIATION 1 行抜粋}
+   #    fix_plan: {ROOT_CAUSE 1 行}
 
    Agent tool で impl-worker を spawn。prompt に以下を含める:
    ─────────────────────────────────────
@@ -129,6 +206,9 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
    - プロジェクトコンテキスト（CLAUDE.md 等）
    - 検証コマンド (TEST, E2E_TEST, LINT, FMT)
    - E2E_TEST パターンの説明（スコープ指定必須、例: `go test -run {TEST_NAME}`）
+   - **ENV_STATUS / ENV_DETAILS**（Step 0.5 の結果。ISSUE のときは「該当症状の単体テスト/E2E は SKIPPED_ENV_ISSUE で報告してよい」と明示）
+   - **CALLERS**（前処理 1 の結果。リスト or 「なし」or 「単一」or 「skip」）
+   - **TEST_SCOPE_HINT**（前処理 2 の結果。Implementer はこれで TEST 実行をスコープする）
    - Implementation Notes（進捗ファイルから）
    - reviewer_feedback があれば「Reviewer フィードバック」として追加
    - debugger_fix_plan があれば「Debug レポート」として追加
@@ -138,7 +218,7 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
 
    READY_FOR_REVIEW の場合:
    >> Implementer 完了: READY_FOR_REVIEW
-      変更: {CHANGED_FILES の件数}ファイル
+      変更: {CHANGED_FILES の件数}ファイル / TEST_SCOPE: {Implementer 報告の TEST_SCOPE}
       テスト: {TEST_RESULT} / E2E: {E2E_RESULT} / リント: {LINT_RESULT} / fmt: {FMT_RESULT}
       E2E スコープ: {E2E_SCOPE}
    → ③ へ
@@ -169,22 +249,26 @@ auto / step 両モードで同一の内容を出力する（auto では一時停
    - 検証コマンド (TEST, E2E_TEST, LINT, FMT)
    - E2E_TEST パターンの説明（スコープ指定必須）
    - Implementer が報告した E2E_SCOPE（妥当性検証のため）
+   - **Implementer が報告した TEST_SCOPE**（Reviewer は同範囲で 1a 実行、TEST 全体で 1b 実行）
    - CHANGED_FILES のリスト
    - プロジェクト固有のアーキテクチャルール（あれば）
+   - **ENV_STATUS / ENV_DETAILS**（Step 0.5 の結果）
+   - **ENV_BASELINE_VERIFIED**: true | false（Step 0.5 で決定。true なら Reviewer は `git stash` 経由の baseline 検証を省略可）
    ─────────────────────────────────────
 
    戻り値の VERDICT をパースし、【バナー出力】:
 
    APPROVED の場合:
    >> Reviewer 完了: APPROVED
-      機械チェック: テスト {Tests} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
-      E2E スコープ: {E2E_SCOPE}
+      機械チェック: テスト 1a={Tests1a}/1b={Tests1b} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      Baseline: {BaselineCheck} / E2E スコープ: {E2E_SCOPE}
       総評: {SUMMARY}
    → ④ へ
 
    REJECTED (reviewer_rejections < 2) の場合:
    >> Reviewer 完了: REJECTED ({reviewer_rejections+1}/2)
-      機械チェック: テスト {Tests} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      機械チェック: テスト 1a={Tests1a}/1b={Tests1b} / E2E {E2E} / リント {Lint} / fmt {Fmt} / TODO {TBD/TODO grep} / 構造 {Architecture}
+      Baseline: {BaselineCheck}
       指摘 ({FINDINGS の件数}件): {FINDINGS の 1件目}
       >> Implementer に差し戻し (REMEDIATION 付き)
    reviewer_rejections += 1, reviewer_feedback = REMEDIATION → ② へ
