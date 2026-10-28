@@ -1,0 +1,20 @@
+{
+  "name": "drive-stacked-prs",
+  "version": "1.0.0",
+  "description": "Drive gh-stack stacked PRs bottom-up to merge on an interval: wait for AI review, triage REJECT findings, and squash-merge each layer with gh stack merge.",
+  "author": {
+    "name": "Shin Uozumi",
+    "url": "https://github.com/sinozu"
+  },
+  "homepage": "https://github.com/sinozu/claude-skills",
+  "repository": "https://github.com/sinozu/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "stacked-prs",
+    "gh-stack",
+    "github",
+    "ai-review",
+    "merge",
+    "loop"
+  ]
+}
