@@ -26,6 +26,16 @@
         "name": "Shin Uozumi"
       },
       "homepage": "https://github.com/sinozu/claude-skills"
+    },
+    {
+      "name": "drive-stacked-prs",
+      "source": "./plugins/drive-stacked-prs",
+      "description": "Drive gh-stack stacked PRs bottom-up to merge, waiting on AI review and triaging its findings",
+      "version": "1.0.0",
+      "author": {
+        "name": "Shin Uozumi"
+      },
+      "homepage": "https://github.com/sinozu/claude-skills"
     }
   ]
 }
